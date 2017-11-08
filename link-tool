@@ -1,0 +1,134 @@
+#!/usr/bin/env node
+
+const path = require('path');
+const execSync = require('child_process').execSync;
+const config = require('./config.json');
+const TEXT_RED = '\x1b[31m%s\x1b[0m';
+const TEXT_GREEN = '\x1b[32m%s\x1b[0m';
+const TEXT_YELLOW = '\x1b[33m%s\x1b[0m';
+
+const projectPackageJSON = require(path.join(config.projectPath, 'package.json'));
+
+let project = {
+  path: config.projectPath,
+  deps: Object.assign({}, projectPackageJSON.dependencies, projectPackageJSON.devDependencies)
+};
+
+let libs = {};
+
+config.libPaths.forEach(libPath => {
+  const lib = require(path.join(libPath, 'package.json'));
+  libs[lib.name] = {
+    path: libPath,
+    version: lib.version,
+    deps: Object.assign({}, lib.dependencies, lib.devDependencies)
+  }
+});
+
+const libNames = Object.keys(libs);
+
+Object.keys(project.deps).forEach(depName => {
+  if (libNames.indexOf(depName) === -1) {
+    delete project.deps[depName];
+  } else {
+    project.deps[depName] = project.deps[depName].replace('~', '').replace('^', '') // TODO support this
+  }
+});
+
+Object.keys(libs).forEach(lib => {
+  Object.keys(libs[lib].deps).forEach(depName => {
+    if (libNames.indexOf(depName) === -1) {
+      delete libs[lib].deps[depName];
+    } else {
+      libs[lib].deps[depName] = libs[lib].deps[depName].replace('~', '').replace('^', '') // TODO support this
+    }
+  });
+});
+
+function status() {
+  Object.keys(project.deps).forEach(depName => {
+    const version = project.deps[depName];
+    const libPath = libs[depName].path;
+    const command = `git -C "${libPath}" log --oneline master...${version}`;
+    try {
+      const gitDiff = execSync(command).toString();
+      if (gitDiff.length) {
+        console.log(TEXT_RED, `> Commit of linked ${depName} for the project is DIFFERENT FROM the version specified in package.json (${version})! git diff result:`);
+        console.log(gitDiff);
+      } else {
+        console.log(TEXT_GREEN, `> Commit of linked ${depName} for the project is matching the version specified in package.json (${version})`);
+      }
+    } catch (e) {
+      console.error(TEXT_RED, `Error comparing of linked '${depName}' for the project`);
+      console.error(e.message)
+    }
+  });
+
+  Object.keys(libs).forEach(lib => {
+    Object.keys(libs[lib].deps).forEach(depName => {
+      const version = libs[lib].deps[depName];
+      const libPath = libs[depName].path;
+      const command = `git -C "${libPath}" log --oneline master...${version}`;
+      try {
+        const gitDiff = execSync(command).toString();
+        if (gitDiff.length) {
+          console.log(TEXT_RED, `> Commit of linked '${depName}' for '${libs[lib].name}' is DIFFERENT FROM the version specified in package.json (${version})! git diff result:`);
+          console.log(gitDiff);
+        } else {
+          console.log(TEXT_GREEN, `> Commit of linked '${depName}' for '${libs[lib].name}' is matching the version specified in package.json (${version})`);
+        }
+      } catch (e) {
+        console.error(TEXT_RED, `Error comparing of linked '${depName}' for '${lib}' `);
+        console.error(e.message)
+      }
+    });
+  });
+
+}
+
+function link() {
+  Object.keys(libs).forEach(lib => {
+    const command = `${config.npmLinkCommand} --prefix "${libs[lib].path}"`;
+    console.log(TEXT_YELLOW, `Executing ${command}`);
+    try {
+      const gitDiff = execSync(command).toString();
+    } catch (e) {
+      console.error(TEXT_RED, `Error executing ${command}`);
+      console.error(e.message)
+    }
+  });
+  
+  Object.keys(project.deps).forEach(depName => {
+    const command = `${config.npmLinkCommand} --prefix "${project.path}" ${depName}`;
+    console.log(TEXT_YELLOW, `Executing ${command}`);
+    try {
+      const gitDiff = execSync(command).toString();
+    } catch (e) {
+      console.error(TEXT_RED, `Error executing ${command}`);
+      console.error(e.message)
+    }
+  });
+
+  Object.keys(libs).forEach(lib => {
+    Object.keys(libs[lib].deps).forEach(depName => {
+      const command = `${config.npmLinkCommand} --prefix "${libs[lib].path}" ${depName}`;
+      console.log(TEXT_YELLOW, `Executing ${command}`);
+      try {
+        const gitDiff = execSync(command).toString();
+      } catch (e) {
+        console.error(TEXT_RED, `Error executing ${command}`);
+        console.error(e.message)
+      }
+    });
+  });
+}
+
+if (process.argv[2] === 'status') {
+  return status();
+}
+
+if (process.argv[2] === 'link') {
+  return link();
+}
+
+console.log('invalid arguments. try status or link(TODO)');

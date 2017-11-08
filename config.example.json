@@ -1,0 +1,10 @@
+{
+  "projectPath": "/workspace/MyProject",
+  "libPaths": [
+    "/workspace/Module1",
+    "/workspace/Module1",
+    "/workspace/Module3",
+    "/workspace/Module4"
+  ],
+  "npmLinkCommand": "npm link --registry https://www.npmjs.com"
+}
